@@ -372,6 +372,12 @@ class BackupVMsWindow(ui_backupdlg.Ui_Backup, QtWidgets.QWizard):
                     self, self.tr("Wait!"),
                     self.tr("Enter backup target location first."))
                 return False
+            try:
+                utils.validate_path(backup_location)
+            except ValueError as ex:
+                QtWidgets.QMessageBox.warning(
+                    self, self.tr("Unexpected characters in path!"), str(ex))
+                return False
             if self.appvm_combobox.currentText() == "dom0" \
                     and not os.path.isdir(backup_location):
                 QtWidgets.QMessageBox.information(

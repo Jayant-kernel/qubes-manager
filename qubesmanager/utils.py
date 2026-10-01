@@ -57,6 +57,15 @@ def get_path_chars_message():
     ).format(characters=PATH_ALLOWED_SPECIAL_CHARACTERS)
 
 
+def validate_path(path):
+    """Return a path if it uses only characters accepted by GUI tools."""
+    if not path or not PATH_ALLOWED_CHARACTERS_RE.fullmatch(path):
+        raise ValueError(get_path_chars_message())
+    if '../' in path or '\0' in path:
+        raise ValueError(get_path_chars_message())
+    return path.strip()
+
+
 # important usage note: which initialize_widget should I use?
 # - if you want a list of VMs, use initialize_widget_with_vms, optionally
 #   adding a property if you want to handle qubesadmin.DEFAULT and the
@@ -492,11 +501,7 @@ def get_path_from_vm(vm, service_name):
 
     if not untrusted_path:
         return None
-    if PATH_ALLOWED_CHARACTERS_RE.fullmatch(untrusted_path):
-        assert '../' not in untrusted_path
-        assert '\0' not in untrusted_path
-        return untrusted_path.strip()
-    raise ValueError(get_path_chars_message())
+    return validate_path(untrusted_path)
 
 
 def format_dependencies_list(dependencies):

@@ -64,8 +64,17 @@ class VMBootFromDeviceWindow(ui_bootfromdevice.Ui_BootDialog,
         if self.blockDeviceRadioButton.isChecked():
             self.cdrom_location = self.blockDeviceComboBox.currentText()
         elif self.fileRadioButton.isChecked():
+            try:
+                path = utils.validate_path(self.pathText.text())
+            except ValueError as ex:
+                QtWidgets.QMessageBox.warning(
+                    self,
+                    self.tr("Unexpected characters in path!"),
+                    str(ex)
+                )
+                return
             self.cdrom_location = str(self.fileVM.currentData()) + \
-                             ":" + self.pathText.text()
+                             ":" + path
         else:
             QtWidgets.QMessageBox.warning(
                 self,

@@ -70,3 +70,22 @@ def test_01_select_file_dialog_invalid_characters(mock_get_path, mock_warning):
         utils.get_path_chars_message(),
     )
     dialog.pathText.setText.assert_not_called()
+
+
+@mock.patch("PyQt6.QtWidgets.QMessageBox.warning")
+def test_02_save_and_apply_rejects_manually_entered_invalid_path(
+        mock_warning):
+    dialog = _boot_dialog()
+    dialog.blockDeviceRadioButton = mock.Mock()
+    dialog.blockDeviceRadioButton.isChecked.return_value = False
+    dialog.fileRadioButton = mock.Mock()
+    dialog.fileRadioButton.isChecked.return_value = True
+    dialog.fileVM = mock.Mock()
+    dialog.pathText = mock.Mock()
+    dialog.pathText.text.return_value = "/home/zażółć.iso"
+    dialog.accept = mock.Mock()
+
+    bootfromdevice.VMBootFromDeviceWindow.save_and_apply(dialog)
+
+    mock_warning.assert_called_once()
+    dialog.accept.assert_not_called()

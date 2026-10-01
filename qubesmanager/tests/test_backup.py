@@ -149,6 +149,20 @@ def test_03_passphrase_verification(backup_dlg):
         "Matching passphrase/verification not accepted"
 
 
+@mock.patch("PyQt6.QtWidgets.QMessageBox.warning")
+def test_04_rejects_manually_entered_path_with_invalid_characters(
+        mock_warning):
+    dialog = backup.BackupVMsWindow.__new__(backup.BackupVMsWindow)
+    dialog.tr = lambda text: text
+    dialog.select_dir_page = object()
+    dialog.currentPage = lambda: dialog.select_dir_page
+    dialog.dir_line_edit = mock.Mock()
+    dialog.dir_line_edit.text.return_value = "/home/zażółć"
+
+    assert not backup.BackupVMsWindow.validateCurrentPage(dialog)
+    mock_warning.assert_called_once()
+
+
 @mock.patch('builtins.open', new_callable=mock.mock_open)
 def test_10_do_backup(mock_open, backup_dlg):
 

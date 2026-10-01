@@ -26,7 +26,18 @@ from qubesmanager import utils
 
 
 class TestPathFromVM(unittest.TestCase):
-    def test_00_accepts_ascii_path(self):
+    def test_00_validate_path_accepts_allowed_characters(self):
+        self.assertEqual(
+            utils.validate_path("/home/user/backup-file_01.iso"),
+            "/home/user/backup-file_01.iso",
+        )
+
+    def test_01_validate_path_rejects_non_ascii_characters(self):
+        with self.assertRaisesRegex(
+                ValueError, "Paths can contain only ASCII"):
+            utils.validate_path("/home/user/zażółć")
+
+    def test_02_get_path_from_vm_accepts_ascii_path(self):
         vm = mock.Mock()
         vm.run_service_for_stdio.return_value = (
             b"/home/user/backup-file_01.iso\n",
@@ -37,7 +48,7 @@ class TestPathFromVM(unittest.TestCase):
 
         self.assertEqual(path, "/home/user/backup-file_01.iso")
 
-    def test_01_rejects_non_ascii_path(self):
+    def test_03_get_path_from_vm_rejects_non_ascii_path(self):
         vm = mock.Mock()
         vm.run_service_for_stdio.return_value = (
             "zażółć.pdf\n".encode("utf-8"),
@@ -49,7 +60,7 @@ class TestPathFromVM(unittest.TestCase):
 
         self.assertIn("ASCII", str(exc.exception))
 
-    def test_02_rejects_control_character(self):
+    def test_04_get_path_from_vm_rejects_control_character(self):
         vm = mock.Mock()
         vm.run_service_for_stdio.return_value = (
             b"/home/user/bad\tname.pdf\n",
