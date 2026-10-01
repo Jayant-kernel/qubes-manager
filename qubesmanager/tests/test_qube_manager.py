@@ -441,11 +441,13 @@ def test_209_shutdownvm(mock_monitor, mock_timer, _mock_question,
     assert qubes_manager.action_shutdownvm.isEnabled()
     vm = qubes_manager.qubes_app.domains['test-blue']
 
-    with mock.patch.object(vm, 'shutdown') as mock_shutdown:
-        qubes_manager.action_shutdownvm.trigger()
-        mock_shutdown.assert_called_once_with(force=False)
-        mock_monitor.assert_called_once_with(vm, mock.ANY, mock.ANY, mock.ANY)
-        mock_timer.assert_called_once_with(mock.ANY, mock.ANY)
+    expected_shutdown = ('test-blue', 'admin.vm.Shutdown', 'wait', None)
+    assert expected_shutdown not in qubes_manager.qubes_app.actual_calls
+    qubes_manager.qubes_app.expected_calls[expected_shutdown] = b'0\x00'
+
+    qubes_manager.action_shutdownvm.trigger()
+    mock_monitor.assert_called_once_with(vm, mock.ANY, mock.ANY, mock.ANY)
+    mock_timer.assert_called_once_with(mock.ANY, mock.ANY)
 
 
 def test_211_remove_adminvm(qubes_manager):
@@ -508,10 +510,12 @@ def test_214_restartvm(_msgbox, mock_monitor, _qtimer, qubes_manager):
     assert qubes_manager.action_restartvm.isEnabled()
     vm = qubes_manager.qubes_app.domains['test-blue']
 
-    with mock.patch.object(vm, 'shutdown') as mock_shutdown:
-        qubes_manager.action_restartvm.trigger()
-        mock_shutdown.assert_called_once_with(force=True)
-        mock_monitor.assert_called_once_with(vm, 1000, True, mock.ANY)
+    expected_shutdown = ('test-blue', 'admin.vm.Shutdown', 'force+wait', None)
+    assert expected_shutdown not in qubes_manager.qubes_app.actual_calls
+    qubes_manager.qubes_app.expected_calls[expected_shutdown] = b'0\x00'
+
+    qubes_manager.action_restartvm.trigger()
+    mock_monitor.assert_called_once_with(vm, 1000, True, mock.ANY)
 
 
 @mock.patch('qubesmanager.qube_manager.UpdateVMsThread')
@@ -981,6 +985,45 @@ def test_313_template_menu_multiple(mock_question, qubes_manager):
     for call in calls:
         assert call in qubes_manager.qubes_app.actual_calls
 
+@pytest.mark.asyncio(loop_scope="module")
+@mock.patch('PyQt6.QtWidgets.QMessageBox.question')
+async def test_312_template_menu_dispvm(mock_question, qubes_manager):
+    mock_question.return_value = QMessageBox.StandardButton.Yes
+
+    _select_vm(qubes_manager, 'test-disp')
+
+    assert qubes_manager.template_menu.isEnabled()
+
+    expected_templates = {
+        str(vm) for vm in qubes_manager.qubes_app.domains
+        if getattr(vm, 'template_for_dispvms', False)
+    }
+
+    current_templates = {
+        action.text() for action in qubes_manager.template_menu.actions()
+    }
+
+    assert current_templates == expected_templates
+
+    change_call = (
+        'test-disp',
+        'admin.vm.property.Set',
+        'template',
+        b'test-alt-dvm'
+    )
+
+    qubes_manager.qubes_app.expected_calls[change_call] = b'0\x00'
+
+    action = next(
+        action for action in qubes_manager.template_menu.actions()
+        if action.text() == 'test-alt-dvm'
+    )
+
+    action.trigger()
+
+    await asyncio.sleep(0)
+
+    assert change_call in qubes_manager.qubes_app.actual_calls
 
 @mock.patch('PyQt6.QtWidgets.QMessageBox.information')
 @mock.patch('PyQt6.QtWidgets.QMessageBox.warning')
@@ -1445,6 +1488,30 @@ def test_602_startvm_thread_error():
         **{'start.side_effect': exc.QubesException('Error')})
 
     thread = qube_manager.StartVMThread(vm)
+    thread.run()
+
+    assert thread.msg is not None
+
+
+def test_603_shutdownvm_thread():
+    vm = mock.Mock(spec=['shutdown'])
+
+    thread = qube_manager.ShutdownVMThread(vm)
+    thread.run()
+    vm.shutdown.assert_called_once_with(force=False, wait=False)
+    vm.shutdown.reset_mock()
+
+    thread = qube_manager.ShutdownVMThread(vm, force=True, wait=True)
+    thread.run()
+    vm.shutdown.assert_called_once_with(force=True, wait=True)
+
+
+def test_604_shutdownvm_thread_error():
+    vm = mock.Mock(
+        spec=['shutdown'],
+        **{'shutdown.side_effect': exc.QubesException('Error')})
+
+    thread = qube_manager.ShutdownVMThread(vm)
     thread.run()
 
     assert thread.msg is not None

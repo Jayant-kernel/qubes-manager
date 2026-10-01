@@ -31,7 +31,6 @@ from os import path
 
 from qubesadmin import exc
 from qubesadmin import utils
-from qubesadmin.tools import qvm_start
 
 # pylint: disable=import-error
 from PyQt6 import QtWidgets
@@ -350,7 +349,6 @@ class VmInfo():
             self.internal = manager_utils.get_boolean_feature(
                 self.vm, 'internal')
         if not event or event.endswith(':is_preload'):
-            self.is_preload = getattr(self.vm, 'is_preload', None)
             self.state['is_preload'] = getattr(self.vm, 'is_preload', None)
 
         if not event or event.endswith(':ip') or event.endswith(':netvm'):
@@ -375,7 +373,7 @@ class VmInfo():
                     self.dvm = "default (" + str(self.dvm) + ")"
                 elif self.dvm is not None:
                     self.dvm = str(self.dvm)
-            except exc.QubesDaemonAccessError:
+            except (exc.QubesDaemonAccessError, AttributeError):
                 if self.dvm is not None:
                     self.dvm = str(self.dvm)
 
@@ -492,7 +490,7 @@ class QubesTableModel(QAbstractTableModel):
             if col_name == "Disk Usage":
                 return vm.disk
             if col_name == "Internal":
-                if getattr(vm, "is_preload", None):
+                if vm.state["is_preload"]:
                     return "Yes (preloaded)"
                 if vm.internal:
                     return "Yes"
@@ -692,6 +690,20 @@ class StartVMThread(common_threads.QubesThread):
     def run(self):
         try:
             self.vm.start()
+        except exc.QubesException as ex:
+            self.msg = ("Error starting Qube!", str(ex))
+
+
+# pylint: disable=too-few-public-methods
+class ShutdownVMThread(common_threads.QubesThread):
+    def __init__(self, vm, force: bool = False, wait: bool = False):
+        super().__init__(vm)
+        self.force = force
+        self.wait_end = wait  # wait() is callable, let's not interfere.
+
+    def run(self):
+        try:
+            self.vm.shutdown(force=self.force, wait=self.wait_end)
         except exc.QubesException as ex:
             self.msg = ("Error starting Qube!", str(ex))
 
@@ -1129,13 +1141,27 @@ class VmManagerWindow(ui_qubemanager.Ui_VmManagerWindow, QMainWindow):
 
         progress.setValue(row_no)
 
-    def init_template_menu(self):
+    def init_template_menu(self, selected_vms=None):
         self.template_menu.clear()
+
+        dispvm_selection = (
+            bool(selected_vms)
+            and all(vm.klass == 'DispVM' for vm in selected_vms)
+        )
+
         for vm in self.qubes_app.domains:
-            if vm.klass == 'TemplateVM':
+            if (
+                dispvm_selection
+                and getattr(vm, 'template_for_dispvms', False)
+            ) or (
+                not dispvm_selection
+                and vm.klass == 'TemplateVM'
+            ):
                 action = self.template_menu.addAction(vm.name)
                 action.setData(vm.name)
-                action.triggered.connect(partial(self.change_template, vm.name))
+                action.triggered.connect(
+                    partial(self.change_template, vm.name)
+                )
 
     def _get_default_netvm(self):
         for vm in self.qubes_app.domains:
@@ -1151,7 +1177,7 @@ class VmManagerWindow(ui_qubemanager.Ui_VmManagerWindow, QMainWindow):
         action.triggered.connect(partial(self.change_network, 'default'))
 
         for vm in self.qubes_app.domains:
-            if vm.qid != 0 and vm.provides_network:
+            if vm.qid != 0 and getattr(vm, "provides_network", False):
                 action = self.network_menu.addAction(vm.name)
                 action.setData(vm.name)
                 action.triggered.connect(partial(self.change_network, vm.name))
@@ -1371,6 +1397,10 @@ class VmManagerWindow(ui_qubemanager.Ui_VmManagerWindow, QMainWindow):
         return vms
 
     def table_selection_changed(self):
+        selected_vms = self.get_selected_vms()
+
+        self.init_template_menu(selected_vms)
+
         # Since selection could have multiple domains
         # enable all first and then filter them
         self.template_menu.setEnabled(True)
@@ -1378,7 +1408,7 @@ class VmManagerWindow(ui_qubemanager.Ui_VmManagerWindow, QMainWindow):
         for action in self.toolbar.actions() + self.context_menu.actions():
             action.setEnabled(True)
 
-        for vm in self.get_selected_vms():
+        for vm in selected_vms:
             #  TODO: add boot from device to menu and add windows tools there
             # Update available actions:
             if vm.state['power'] in \
@@ -1419,11 +1449,28 @@ class VmManagerWindow(ui_qubemanager.Ui_VmManagerWindow, QMainWindow):
                 self.action_run_command_in_vm.setEnabled(False)
                 self.template_menu.setEnabled(False)
                 self.network_menu.setEnabled(False)
+                self.action_startvm_tools_install.setEnabled(False)
+            elif vm.klass == "RemoteVM":
+                self.action_open_console.setEnabled(False)
+                self.action_settings.setEnabled(False)
+                self.action_resumevm.setEnabled(False)
+                self.action_removevm.setEnabled(False)
+                self.action_clonevm.setEnabled(False)
+                self.action_pausevm.setEnabled(False)
+                self.action_restartvm.setEnabled(False)
+                self.action_killvm.setEnabled(False)
+                self.action_shutdownvm.setEnabled(False)
+                self.action_appmenus.setEnabled(False)
+                self.action_editfwrules.setEnabled(False)
+                self.action_run_command_in_vm.setEnabled(False)
+                self.template_menu.setEnabled(False)
+                self.network_menu.setEnabled(False)
+                self.action_startvm_tools_install.setEnabled(False)
             elif vm.klass == 'DispVM':
                 self.action_appmenus.setEnabled(False)
                 if vm.auto_cleanup:
                     self.action_restartvm.setEnabled(False)
-                self.template_menu.setEnabled(False)
+
             elif vm.klass == 'TemplateVM':
                 self.template_menu.setEnabled(False)
                 self.network_menu.setEnabled(False)
@@ -1444,6 +1491,12 @@ class VmManagerWindow(ui_qubemanager.Ui_VmManagerWindow, QMainWindow):
                 self.action_shutdownvm.setEnabled(False)
                 self.action_updatevm.setEnabled(False)
                 self.action_run_command_in_vm.setEnabled(False)
+
+        if (
+            any(vm.klass == 'DispVM' for vm in selected_vms)
+            and not all(vm.klass == 'DispVM' for vm in selected_vms)
+        ):
+            self.template_menu.setEnabled(False)
 
         self.update_template_menu()
         self.update_network_menu()
@@ -1599,8 +1652,9 @@ class VmManagerWindow(ui_qubemanager.Ui_VmManagerWindow, QMainWindow):
                     self.tr("'qubes-windows-tools' is not installed in dom0."))
         for vm_info in self.get_selected_vms():
             vm = vm_info.vm
-            qvm_start.main(['--cdrom',
-                'dom0:/usr/lib/qubes/qubes-windows-tools.iso', vm.name])
+            utils.start_expert(
+                domain=vm, drive="cdrom:dom0:/usr/lib/qubes/qubes-windows-tools.iso"
+            )
 
     @pyqtSlot(name='on_action_pausevm_triggered')
     def action_pausevm_triggered(self):
@@ -1660,9 +1714,15 @@ class VmManagerWindow(ui_qubemanager.Ui_VmManagerWindow, QMainWindow):
 
                 force = True
                 for connected_vm in connected_vms:
-                    connected_vm.shutdown(force=force)
+                    thread = ShutdownVMThread(connected_vm, force=force)
+                    self.threads_list.append(thread)
+                    thread.finished.connect(self.clear_threads)
+                    thread.start()
 
-            vm.shutdown(force=force)
+            thread = ShutdownVMThread(vm, force=force, wait=True)
+            self.threads_list.append(thread)
+            thread.finished.connect(self.clear_threads)
+            thread.start()
         except exc.QubesException as ex:
             QMessageBox.warning(
                 self,

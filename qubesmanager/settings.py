@@ -34,7 +34,6 @@ from qubesadmin.tools import QubesArgumentParser
 from qubesadmin import device_protocol
 from qubesadmin.device_protocol import DeviceCategory
 from qubesadmin import utils as admin_utils
-from qubesadmin.tools import qvm_start
 import qubesadmin.exc
 
 from . import bootfromdevice
@@ -1389,11 +1388,13 @@ class VMSettingsWindow(ui_settingsdlg.Ui_SettingsDialog, QtWidgets.QDialog):
 
     def boot_from_cdrom_button_pressed(self):
         boot_dialog = bootfromdevice.VMBootFromDeviceWindow(
-            vm=self.vm.name, qapp=self.qapp, qubesapp=self.qubesapp, parent=self
+            vm=self.vm, qapp=self.qapp, qubesapp=self.qubesapp, parent=self
         )
         if boot_dialog.exec():
             self.save_and_apply()
-            qvm_start.main(["--cdrom", boot_dialog.cdrom_location, self.vm.name])
+            admin_utils.start_expert(
+                domain=self.vm, drive="cdrom:" + boot_dialog.cdrom_location
+            )
 
     def virt_mode_changed(self, new_idx):  # pylint: disable=unused-argument
         self.update_pv_warning()
@@ -2026,14 +2027,14 @@ parser.set_defaults(
 def main(args=None):
     args = parser.parse_args(args)
     vm = args.domains.pop()
-    if vm.klass == "AdminVM":
+    if vm.klass in ["AdminVM", "RemoteVM"]:
         print(
             "This tool cannot be used to change properties of an "
-            f"AdminVM ({vm.name})."
+            f"{vm.klass} ({vm.name})."
         )
         print(
             "You can use command-line tools such as qvm-prefs "
-            "and qvm-features to change properties of an AdminVM"
+            f"and qvm-features to change properties of a {vm.klass}"
         )
         return 1
 
