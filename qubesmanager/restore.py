@@ -160,7 +160,7 @@ class RestoreVMsWindow(ui_restoredlg.Ui_Restore, QtWidgets.QWizard):
     def select_path_button_clicked(self):
         backup_utils.select_path_button_clicked(self, True)
 
-    def validateCurrentPage(self):
+    def validateCurrentPage(self):  # pylint: disable=invalid-name
         if self.currentPage() is self.select_dir_page:
             try:
                 utils.validate_path(str(self.dir_line_edit.text()))

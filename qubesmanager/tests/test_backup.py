@@ -151,15 +151,12 @@ def test_03_passphrase_verification(backup_dlg):
 
 @mock.patch("PyQt6.QtWidgets.QMessageBox.warning")
 def test_04_rejects_manually_entered_path_with_invalid_characters(
-        mock_warning):
-    dialog = backup.BackupVMsWindow.__new__(backup.BackupVMsWindow)
-    dialog.tr = lambda text: text
-    dialog.select_dir_page = object()
-    dialog.currentPage = lambda: dialog.select_dir_page
-    dialog.dir_line_edit = mock.Mock()
-    dialog.dir_line_edit.text.return_value = "/home/zażółć"
+        mock_warning, backup_dlg):
+    backup_dlg.next()
+    assert backup_dlg.currentPage() is backup_dlg.select_dir_page
+    backup_dlg.dir_line_edit.setText("/home/zażółć")
 
-    assert not backup.BackupVMsWindow.validateCurrentPage(dialog)
+    assert not backup_dlg.validateCurrentPage()
     mock_warning.assert_called_once()
 
 
